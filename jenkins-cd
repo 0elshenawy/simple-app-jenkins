@@ -1,0 +1,51 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = "java-app"
+    }
+
+    stages {
+
+        stage('Build') {
+            steps {
+                sh 'docker build -t $IMAGE_NAME .'
+            }
+        }
+
+        stage('Push') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub',
+                    usernameVariable: 'USERNAME',
+                    passwordVariable: 'PASSWORD'
+                )]) {
+
+                    sh '''
+                        docker login -u $USERNAME -p $PASSWORD
+                        docker tag $IMAGE_NAME:latest $USERNAME/$IMAGE_NAME:latest
+                        docker push $USERNAME/$IMAGE_NAME:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                withCredentials([file(
+                    credentialsId: 'cluster',
+                    variable: 'KUBECONFIG_FILE'
+                )]) {
+
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG_FILE
+                        kubectl get nodes
+                        kubectl apply -f k8s/deployment.yaml
+                        kubectl rollout status deployment/java-app
+                    '''
+                }
+            }
+        }
+    }
+}
+
